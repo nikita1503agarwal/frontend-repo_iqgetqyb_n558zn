@@ -1,36 +1,63 @@
+import React, { useEffect, useState } from 'react'
 import Hero from './components/Hero'
 import Showcase from './components/Showcase'
 import Story from './components/Story'
 import ThreePencil from './components/ThreePencil'
-import { useEffect, useState } from 'react'
 import { apiGet, apiPost } from './lib/api'
 
-export default function App() {
+// Minimal React error boundary to avoid full-app crashes (e.g., WebGL/3D issues)
+class ReactErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+  componentDidCatch(error, info) {
+    console.warn('App error:', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || null
+    }
+    return this.props.children
+  }
+}
+
+function AppInner() {
   const [products, setProducts] = useState([])
   const [userId] = useState('demo-user-1')
 
   useEffect(() => {
-    // Seed a default product if none exists and then fetch
-    (async () => {
+    let mounted = true
+    ;(async () => {
       try {
         const list = await apiGet('/api/products')
         if (!list || list.length === 0) {
-          await apiPost('/api/products', {
-            slug: 'neo-pencil-pro',
-            title: 'NeoPencil Pro',
-            description: 'Futuristic next-gen pencil with digital sync, tilt sensing, and haptic feedback.',
-            base_price: 129.0,
-            images: [],
-            in_stock: true,
-            inventory: 250
-          })
+          try {
+            await apiPost('/api/products', {
+              slug: 'neo-pencil-pro',
+              title: 'NeoPencil Pro',
+              description: 'Futuristic next-gen pencil with digital sync, tilt sensing, and haptic feedback.',
+              base_price: 129.0,
+              images: [],
+              in_stock: true,
+              inventory: 250,
+            })
+          } catch (_) {
+            // ignore if already exists
+          }
         }
         const refreshed = await apiGet('/api/products')
-        setProducts(refreshed)
+        if (mounted) setProducts(Array.isArray(refreshed) ? refreshed : [])
       } catch (e) {
-        console.warn('Backend not ready yet:', e.message)
+        console.warn('Backend not ready yet:', e?.message)
       }
     })()
+    return () => {
+      mounted = false
+    }
   }, [])
 
   const addToCart = async (slug) => {
@@ -38,16 +65,16 @@ export default function App() {
       await apiPost('/api/cart/add', { user_id: userId, product_slug: slug, quantity: 1 })
       alert('Added to cart!')
     } catch (e) {
-      alert('Could not add to cart: ' + e.message)
+      alert('Could not add to cart: ' + (e?.message || 'Unknown error'))
     }
   }
 
   const checkout = async () => {
     try {
       const res = await apiPost('/api/checkout', { user_id: userId })
-      alert('Order created: ' + res.order_id)
+      alert('Order created: ' + (res?.order_id || 'OK'))
     } catch (e) {
-      alert('Checkout failed: ' + e.message)
+      alert('Checkout failed: ' + (e?.message || 'Unknown error'))
     }
   }
 
@@ -75,13 +102,13 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-6">
             <h2 className="text-2xl sm:text-4xl font-bold">Featured</h2>
             <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {products.map(p => (
+              {products.map((p) => (
                 <div key={p.slug} className="group border border-zinc-200 rounded-2xl p-6 transition hover:shadow-xl bg-white">
                   <div className="aspect-[4/3] rounded-xl bg-gradient-to-br from-zinc-100 to-zinc-50 group-hover:from-white group-hover:to-zinc-100 transition" />
                   <h3 className="mt-4 text-xl font-semibold">{p.title}</h3>
                   <p className="mt-1 text-zinc-600 text-sm">{p.description}</p>
                   <div className="mt-4 flex items-center justify-between">
-                    <span className="font-bold">${'{'}p.base_price{'}'}</span>
+                    <span className="font-bold">${typeof p.base_price === 'number' ? p.base_price.toFixed(2) : p.base_price}</span>
                     <button onClick={() => addToCart(p.slug)} className="px-4 py-2 rounded-full bg-zinc-900 text-white hover:bg-zinc-800">Add to cart</button>
                   </div>
                 </div>
@@ -97,5 +124,18 @@ export default function App() {
         </footer>
       </main>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <ReactErrorBoundary fallback={<div className="min-h-screen bg-white text-zinc-900 flex items-center justify-center p-8">
+      <div className="max-w-md w-full text-center border border-zinc-200 rounded-2xl p-8 bg-white">
+        <h2 className="text-xl font-semibold">Something went wrong</h2>
+        <p className="mt-2 text-sm text-zinc-600">Please refresh the page. Advanced visuals are temporarily disabled.</p>
+      </div>
+    </div>}>
+      <AppInner />
+    </ReactErrorBoundary>
   )
 }
